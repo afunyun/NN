@@ -13,8 +13,8 @@ class Neurray:
 
         self.training = False
 
-        self.match = np.empty((4, neurons, 1), dtype=idtype)
-        self.emit = np.empty((4, neurons, 1), dtype=odtype)
+        self.match = np.empty((12, neurons, 1), dtype=idtype)
+        self.emit = np.empty((12, neurons, 1), dtype=odtype)
 
     def set_training(self):
         self.training = True
@@ -23,8 +23,8 @@ class Neurray:
         # either pass in the arrays or generate some
         # as if anyone else besides myself knows what a better than random array is
         if not len(args):
-            self.match[...] = randarray((4, self.neurons, 1), self.idtype)
-            self.emit[...] = randarray((4, self.neurons, 1), self.odtype)
+            self.match[...] = randarray((12, self.neurons, 1), self.idtype)
+            self.emit[...] = randarray((12, self.neurons, 1), self.odtype)
         else:
             self.match[...] = args[0]
             self.emit[...] = args[1]
@@ -42,12 +42,21 @@ class Neurray:
         hidden_states = np.where(self.choices, self.emit, ~self.emit)
 
         # start from zero, applying each part
+
         outputs = \
-                (((np.copy(self.base)
-                ^ ~hidden_states[0])
-                | ~hidden_states[1])
-                | hidden_states[2]) \
-                ^ hidden_states[3]
+                np.copy(self.base) \
+                ^ hidden_states[0] \
+                | ~hidden_states[1] \
+                | hidden_states[2] \
+                ^ ~hidden_states[3]
+        #outputs = \
+        #        (((np.copy(self.base) 
+        #        ^ ~hidden_states[0]) 
+        #        | ~hidden_states[1]) 
+        #        | hidden_states[2]) \
+        #        ^ hidden_states[3]
+
+
 
         # capture for backwards pass
         if self.training:
@@ -144,10 +153,10 @@ class Neurray:
         
         # Works with batch_size 1, doesn't with higher
         #emit_loss_mask = (~(states_window ^ emit_window) ^ target_window) < (states_window ^ target_window)
-        emit_loss_mask = gen.choice((True,False), size=(4,filtered_length,1))
+        emit_loss_mask = gen.choice((True,False), size=(12,filtered_length,1))
         
         match_loss_mask = (~(matching_window ^ match_window) ^ input_window) < (matching_window ^ input_window)
-
+        if match_loss_mask.any(): print(match_loss_mask[0])
         # update the neurons
         self.match[...,neuron_convergance,0,None] = np.where(match_loss_mask, ~(filtered_match ^ match_window), filtered_match)
         self.emit[...,neuron_convergance,0,None]  = np.where(emit_loss_mask,  ~(filtered_emit ^ emit_window), filtered_emit)
