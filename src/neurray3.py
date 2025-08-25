@@ -1,6 +1,8 @@
 import numpy as np
 
-class MaskToMask:
+
+
+class U1XToU1X:
     def __init__(self, neurons:int, idtype=np.uint8, odtype=np.uint8):
         self.neurons = neurons
         self.idtype = idtype
@@ -38,7 +40,7 @@ class MaskToMask:
         # Either it exists (gain what it isn't) or it doesn't (gain nothing)
         outputs = np.choose(self.choices, (0, self.emit))
         output = outputs[0]
-        for n in range(self.neurons-2):
+        for n in range(self.neurons-1):
             output |= outputs[n+1]
         
         if self.training:
@@ -53,57 +55,74 @@ class MaskToMask:
 
     def backward(self, target:np.ndarray) -> None:
         assert self.training, "NN Inputs and Outputs are non existant, place this class in training mode first!"
-        mask = (self.output == 0)
+        mask = self.output == 0
         none = self.output[mask]
         none_ex = target[mask]
         none_gi = self.givens[0, mask]
-        some = self.output[~mask]
-        some_ex = target[~mask]
-        some_gi = self.givens[0, ~mask]
         
-        matched = self.choices[..., mask]
-
+        matched = self.choices[..., ~mask]
         if (cases := none.shape[0]) > 0:
-            # we need to add a new case here
-            if cases + self.count > self.neurons:
-                # TODO expand instead
-                raise RuntimeError("Out of slots")
-            for slot in range(cases):
-                self.match[self.count + slot] = none_gi[slot]
-                self.emit[self.count + slot] = none_ex[slot]
-            self.count += cases
-        if (cases := some.shape[0]) > 0:
-            for slot in range(cases):
-                self.match = np.choose(matched[...,slot].reshape(self.neurons,1), (self.match & some_gi[slot], self.match))
-                self.emit = self.emit & some_ex[slot]
+            for slot, case in zip(range(cases), none_ex):
+                mask = (case & self.emit) != 0
+                print(mask)
+                if mask.any():
+                    print(slot)
+                    self.match[mask] &= none_gi[slot]
+                else:
+                    if self.count < self.neurons:
+                        self.match[self.count] = none_gi[slot]
+                        self.emit[self.count] = case
+                        self.count += 1
+                    else:
+                        raise RuntimeError("Out of slots")
 
-nums = [
-0b11100000,
-0b00011100,
-0b10000011,
-0b11001100,
-0b10100101,
-0b01011010,
-0b11110000,
-0b00001111,
-0b11000011,
-0b11111000]
+
+
+
+# case
+# M 1 0
+# 1 1 0
+# 0 0 0
+
+
+
+
+
+
+masks = np.array([
+0b01001001,
+0b00101001,
+0b00000110,
+0b01100110,
+0b11000000,
+0b10000000,
+0b00010000,
+0b00010010,
+0b00010001]
+, dtype=np.uint8)
+
+vals = np.array([
+0b00000001,
+0b00000001,
+0b00000010,
+0b00000010,
+0b00000100,
+0b00000100,
+0b00001000,
+0b00001010,
+0b00001001]
+, dtype=np.uint8)
+
 
 # o7 Elivrge
-eliv = MaskToMask(16, np.uint8, np.uint8)
+eliv = U1XToU1X(6, np.uint8, np.uint8)
 eliv.init_array()
 eliv.set_training()
-array = np.array(nums, np.uint8)
-res = eliv.forward(array[0:5].reshape(1,5))
-eliv.backward(array[0:5])
-#eliv.forward(array[6:9].reshape(1,3))
-#eliv.backward(array[6:9])
-res = eliv.forward(array[0:5].reshape(1,5))
-eliv.backward(array[0:5])
-print(res)
+res = eliv.forward(masks.reshape(1,9))
+print(res, vals)
+eliv.backward(vals)
+res = eliv.forward(masks.reshape(1,9))
+print(res, vals)
+
 print(eliv.match, eliv.emit)
-
-
-
-
 
