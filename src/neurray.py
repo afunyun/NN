@@ -12,14 +12,8 @@ class U1XToU1X:
 
         self.match = np.empty((neurons, 1), dtype=idtype)
         self.emit = np.empty((neurons, 1), dtype=odtype)
-        self.choices = np.empty((1, neurons, 1), dtype=bool)
-        # Mask needs to be all ones, so that &ing it passes through prev step
-        self.mask = np.array((np.iinfo(odtype).max), dtype=odtype).reshape((1,1))
 
     def set_training(self):
-        # Extra space for exact clause for training
-        # TODO self.choices should just be a bit array (exact + contained) to not waste storage
-        self.choices = np.empty((2, self.neurons, 1), dtype=bool)
         self.training = True
 
     def init_array(self, *args):
@@ -35,20 +29,17 @@ class U1XToU1X:
             self.emit[...] = args[1]
 
     def forward(self, inputs:np.ndarray) -> np.ndarray:
-        # check for resonance (saving for backwards)
-        self.choices = (inputs | self.match) == inputs
+        # check for resonance
+        choices = (inputs | self.match) == inputs
         # Either it exists (gain what it isn't) or it doesn't (gain nothing)
-        outputs = np.choose(self.choices, (0, self.emit))
+        outputs = np.choose(choices, (0, self.emit))
         output = outputs[0]
         for n in range(self.neurons-1):
             output |= outputs[n+1]
         
         if self.training:
-            # exact match?
-            self.choices[1] = inputs == self.match[0]
             # capture for backwards pass
             self.givens = inputs
-            self.results = outputs
             self.output = output
         
         return output
@@ -56,25 +47,32 @@ class U1XToU1X:
     def backward(self, target:np.ndarray) -> None:
         assert self.training, "NN Inputs and Outputs are non existant, place this class in training mode first!"
         mask = self.output == 0
-        none = self.output[mask]
         none_ex = target[mask]
-        none_gi = self.givens[0, mask]
+        none_gi = self.givens[mask]
         
-        matched = self.choices[..., ~mask]
-        if (cases := none.shape[0]) > 0:
+        if (cases := none_ex.shape[0]) != 0:
+            # This is either: EXACT, CONTAINS, or NEW
             for slot, case in zip(range(cases), none_ex):
-                mask = (case & self.emit) != 0
-                print(mask)
-                if mask.any():
-                    print(slot)
-                    self.match[mask] &= none_gi[slot]
+                hard_mask = (case == self.emit)
+                loose_mask = (case & self.emit) != 0
+                if hard_mask.any():
+                    self.match[hard_mask] &= none_gi[slot]
+                # CONTAINS
+                elif loose_mask.any():
+                    new_match = self.match[loose_mask] ^ none_gi[slot]
+                    self.match[loose_mask] &= none_gi[slot]
+                    new_emit = self.emit[loose_mask] ^ none_ex[slot]
+                    self.emit[loose_mask] &= none_ex[slot]
+                    assert self.match.shape[0] > 1, "Identical Slots"
+                    assert self.count < self.neurons, "Out of Slots"
+                    self.match[self.count] = new_match
+                    self.emit[self.count] = new_emit
+                    self.count += 1
                 else:
-                    if self.count < self.neurons:
-                        self.match[self.count] = none_gi[slot]
-                        self.emit[self.count] = case
-                        self.count += 1
-                    else:
-                        raise RuntimeError("Out of slots")
+                    assert self.count < self.neurons, "Out of Slots"
+                    self.match[self.count] = none_gi[slot]
+                    self.emit[self.count] = case
+                    self.count += 1
 
 
 
@@ -90,39 +88,31 @@ class U1XToU1X:
 
 
 masks = np.array([
-0b01001001,
-0b00101001,
-0b00000110,
-0b01100110,
-0b11000000,
-0b10000000,
-0b00010000,
-0b00010010,
-0b00010001]
+0b00000001,
+0b00001001]
 , dtype=np.uint8)
 
 vals = np.array([
 0b00000001,
-0b00000001,
-0b00000010,
-0b00000010,
-0b00000100,
-0b00000100,
-0b00001000,
-0b00001010,
 0b00001001]
 , dtype=np.uint8)
+
+test = np.array([8], dtype=np.uint8)
 
 
 # o7 Elivrge
 eliv = U1XToU1X(6, np.uint8, np.uint8)
 eliv.init_array()
 eliv.set_training()
-res = eliv.forward(masks.reshape(1,9))
+res = eliv.forward(masks)
 print(res, vals)
 eliv.backward(vals)
-res = eliv.forward(masks.reshape(1,9))
+res = eliv.forward(masks)
 print(res, vals)
+
+res = eliv.forward(test)
+print(res, 8)
+
 
 print(eliv.match, eliv.emit)
 
