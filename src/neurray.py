@@ -1,17 +1,27 @@
 import numpy as np
 
-
+# TODO handle numbers inbetween these
+def size_to_dtype(size:int):
+    if size == 8:
+        return np.uint8
+    if size == 16:
+        return np.uint16
+    if size == 32:
+        return np.uint32
+    if size == 64:
+        return np.uint64
 
 class U1XToU1X:
-    def __init__(self, neurons:int, idtype=np.uint8, odtype=np.uint8):
-        self.neurons = neurons
-        self.idtype = idtype
-        self.odtype = odtype
+    # TODO improve for more than 64 bits
+    def __init__(self, isize=8, osize=8):
+        idtype = size_to_dtype(isize)
+        odtype = size_to_dtype(osize)
+        self.neurons = osize
 
         self.training = False
 
-        self.match = np.empty((neurons, 1), dtype=idtype)
-        self.emit = np.empty((neurons, 1), dtype=odtype)
+        self.match = np.zeros((osize, 1), dtype=idtype)
+        self.emit = np.zeros((osize, 1), dtype=odtype)
 
     def set_training(self):
         self.training = True
@@ -20,8 +30,6 @@ class U1XToU1X:
         # either pass in the arrays or generate some
         # as if anyone else besides myself knows what a better than random array is
         if not len(args):
-            self.match[...] = np.zeros((self.neurons, 1), self.idtype)
-            self.emit[...] = np.zeros((self.neurons, 1), self.odtype)
             self.count = 0
         else:
             raise "bwaaaaa" # is an error itself
@@ -50,69 +58,33 @@ class U1XToU1X:
         none_ex = target[mask]
         none_gi = self.givens[mask]
         
-        if (cases := none_ex.shape[0]) != 0:
-            # This is either: EXACT, CONTAINS, or NEW
-            for slot, case in zip(range(cases), none_ex):
-                hard_mask = (case == self.emit)
-                loose_mask = (case & self.emit) != 0
-                if hard_mask.any():
-                    self.match[hard_mask] &= none_gi[slot]
-                # CONTAINS
-                elif loose_mask.any():
-                    new_match = self.match[loose_mask] ^ none_gi[slot]
-                    self.match[loose_mask] &= none_gi[slot]
-                    new_emit = self.emit[loose_mask] ^ none_ex[slot]
-                    self.emit[loose_mask] &= none_ex[slot]
-                    assert self.match.shape[0] > 1, "Identical Slots"
-                    assert self.count < self.neurons, "Out of Slots"
-                    self.match[self.count] = new_match
-                    self.emit[self.count] = new_emit
-                    self.count += 1
-                else:
-                    assert self.count < self.neurons, "Out of Slots"
-                    self.match[self.count] = none_gi[slot]
-                    self.emit[self.count] = case
-                    self.count += 1
+        # This is either: EXACT, CONTAINS, or NEW
+
+        # The #1 reason this doesn't work on GPU currently
+        # All EXACT could work, anything else has no shot
+        for slot, case in enumerate(none_ex):
+            hard_mask = (case == self.emit)
+            loose_mask = (case & self.emit) != 0
+            # EXACT
+            if hard_mask.any():
+                self.match[hard_mask] &= none_gi[slot]
+            # CONTAINS
+            elif loose_mask.any():
+                new_match = self.match[loose_mask] ^ none_gi[slot]
+                self.match[loose_mask] &= none_gi[slot]
+                new_emit = self.emit[loose_mask] ^ none_ex[slot]
+                self.emit[loose_mask] &= none_ex[slot]
+                assert self.match.shape[0] > 1, "Identical Slots"
+                assert self.count < self.neurons, "Out of Slots"
+                self.match[self.count] = new_match
+                self.emit[self.count] = new_emit
+                self.count += 1
+            # NEW
+            else:
+                assert self.count < self.neurons, "Out of Slots"
+                self.match[self.count] = none_gi[slot]
+                self.emit[self.count] = case
+                self.count += 1
 
 
-
-
-# case
-# M 1 0
-# 1 1 0
-# 0 0 0
-
-
-
-
-
-
-masks = np.array([
-0b00000001,
-0b00001001]
-, dtype=np.uint8)
-
-vals = np.array([
-0b00000001,
-0b00001001]
-, dtype=np.uint8)
-
-test = np.array([8], dtype=np.uint8)
-
-
-# o7 Elivrge
-eliv = U1XToU1X(6, np.uint8, np.uint8)
-eliv.init_array()
-eliv.set_training()
-res = eliv.forward(masks)
-print(res, vals)
-eliv.backward(vals)
-res = eliv.forward(masks)
-print(res, vals)
-
-res = eliv.forward(test)
-print(res, 8)
-
-
-print(eliv.match, eliv.emit)
 
