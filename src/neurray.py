@@ -11,30 +11,28 @@ def size_to_dtype(size:int):
     if size == 64:
         return np.uint64
 
-class U1XToU1X:
-    # TODO improve for more than 64 bits
-    def __init__(self, isize=8, osize=8):
-        idtype = size_to_dtype(isize)
-        odtype = size_to_dtype(osize)
-        self.neurons = osize
 
-        self.training = False
-
-        self.match = np.zeros((osize, 1), dtype=idtype)
-        self.emit = np.zeros((osize, 1), dtype=odtype)
-
+class Bwaa:
     def set_training(self):
         self.training = True
 
     def init_array(self, *args):
-        # either pass in the arrays or generate some
-        # as if anyone else besides myself knows what a better than random array is
-        if not len(args):
-            self.count = 0
-        else:
-            raise "bwaaaaa" # is an error itself
+        self.count = 0
+        if len(args):
             self.match[...] = args[0]
             self.emit[...] = args[1]
+
+class U1XToU1X(Bwaa):
+    # TODO make these work with more than 64 bits
+    def __init__(self, isize=8, osize=8, neurons=8):
+        idtype = size_to_dtype(isize)
+        odtype = size_to_dtype(osize)
+        self.neurons = neurons
+
+        self.training = False
+
+        self.match = np.zeros((neurons, 1), dtype=idtype)
+        self.emit = np.zeros((neurons, 1), dtype=odtype)
 
     def forward(self, inputs:np.ndarray) -> np.ndarray:
         # check for resonance
@@ -85,6 +83,56 @@ class U1XToU1X:
                 self.match[self.count] = none_gi[slot]
                 self.emit[self.count] = case
                 self.count += 1
+
+class UXToU1X(Bwaa):
+    # TODO make these work with more than 64 bits
+    def __init__(self, isize=8, osize=8, neurons=8):
+        idtype = size_to_dtype(isize)
+        odtype = size_to_dtype(osize)
+        self.neurons = neurons
+
+        self.training = False
+
+        self.match = np.zeros((osize, 1), dtype=idtype)
+        self.emit = np.zeros((osize, 1), dtype=odtype)
+
+    def forward(self, inputs:np.array):
+        choices = self.match == inputs
+        outputs = np.choose(choices, (0, self.emit))
+        output = outputs[0]
+        for n in range(self.neurons-1):
+            output |= outputs[n+1]
+        
+        if self.training:
+            # capture for backwards pass
+            self.givens = inputs
+            self.output = output
+
+        return output
+
+    def backward(self, target:np.array):
+        assert self.training, "NN Inputs and Outputs are non existant, place this class in training mode first!"
+        mask = self.output == 0
+        none_ex = target[mask]
+        none_gi = self.givens[mask]
+        
+        # This is either: EXACT or NEW
+
+        # The #1 reason this doesn't work on GPU currently
+        # All EXACT could work, anything else has no shot
+        for slot, case in enumerate(none_ex):
+            hard_mask = (case == self.emit)
+            # EXACT
+            if hard_mask.any():
+                self.match[hard_mask] &= none_gi[slot]
+            # NEW
+            else:
+                assert self.count < self.neurons, "Out of Slots"
+                self.match[self.count] = none_gi[slot]
+                self.emit[self.count] = case
+                self.count += 1
+
+
 
 
 
