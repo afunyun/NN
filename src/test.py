@@ -18,8 +18,7 @@ test = np.array([8], dtype=np.uint8)
 # o7 Elivrge
 
 #eliv = U1XToU1X(8, 8)
-eliv = UXToU1X(8,8,4)
-eliv.init_array()
+eliv = UXToUX(8,8,4)
 eliv.set_training()
 res = eliv.forward(masks)
 print(res, vals)
