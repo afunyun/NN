@@ -136,24 +136,39 @@ class U1XToInc(Bwaa):
             # capture for backwards pass
             self.givens = inputs
             self.output = output
+            self.choices = choices
         
         return output
 
     def backward(self, target:np.array):
         assert self.training, "NN Inputs and Outputs are non existant, place this class in training mode first!"
-        mask = self.output == 0
-        none_ex = target[mask]
-        none_gi = self.givens[mask]
+        mask = self.output != target
+        not_ex = target[mask]
+        not_gi = self.givens[mask]
+        not_ch = self.choices[mask]
         
-        for slot, case in enumerate(none_ex):
-            hard_mask = 
-
-        pass
+        for slot, case, choices in zip(*enumerate(not_ex), not_ch):
+            hard_mask = choices
+            # TODO this doesn't split cases
+            if not not_gi[slot] in self.emit:
+                assert self.count < self.neurons, "Out of Slots"
+                self.match[self.count] = not_gi[slot]
+                self.emit[self.count] = case - np.sum(self.emit[hard_mask])
+                self.count += 1
+            elif hard_mask.shape[0] == 1:
+                self.emit[hard_mask] = not_gi[case]
+            else:
+                # Temp, poor man's loss function. It isn't exact but it won't over allocate either
+                if case > np.sum(self.emit[hard_mask]):
+                    self.emit[hard_mask] -= (case - np.sum(self.emit[hard_mask])) // hard_mask.shape[0]
+                else:
+                    self.emit[hard_mask] += (np.sum(self.emit[hard_mask]) - case) // hard_mask.shape[0]
 
 # Honestly probably useless, U1XToInc can emulate this while being more flexable
+# Past me was stupid, this is the easier of the two to implment
 class UXToInc(Bwaa):
     def forward(self, inputs:np.array):
-        choices = (inputs >= self.match)
+        choices = (inputs <= self.match)
         outputs = np.choice(choices, (0, self.emit))
 
         output = np.sum(outputs, axis=1)
@@ -164,7 +179,30 @@ class UXToInc(Bwaa):
             self.output = output
 
     def backward(self, target:np.array):
-        pass
+        assert self.training, "NN Inputs and Outputs are non existant, place this class in training mode first!"
+        mask = self.output != target
+        not_ex = target[mask]
+        not_gi = self.givens[mask]
+        not_ch = self.choices[mask]
+        
+        for slot, case, choices in zip(*enumerate(not_ex), not_ch):
+            hard_mask = choices
+            # TODO this doesn't split cases
+            if not not_gi[slot] in self.emit:
+                assert self.count < self.neurons, "Out of Slots"
+                self.match[self.count] = not_gi[slot]
+                self.emit[self.count] = case - np.sum(self.emit[hard_mask])
+                self.count += 1
+            elif hard_mask.shape[0] == 1:
+                self.emit[hard_mask] = not_gi[case]
+            else:
+                # Temp, poor man's loss function. It isn't exact but it won't over allocate either
+                if case > np.sum(hard_mask):
+                    self.emit[hard_mask] -= (case - np.sum(self.emit[hard_mask])) // hard_mask.shape[0]
+                else:
+                    self.emit[hard_mask] += (np.sum(self.emit[hard_mask]) - case) // hard_mask.shape[0]
+
+
 
 
 """
