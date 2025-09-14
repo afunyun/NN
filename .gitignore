@@ -1,13 +1,21 @@
-# Devenv
-env/.devenv*
-env/devenv.local.nix
-env/nix-eval-*
 
-# direnv
-env/.devenv
+# Devenv
+devenv*
+devenv.local.nix
+nix-eval-*
 
 # pre-commit
-env/.pre-commit-config.yaml
+.pre-commit-config.yaml
 
 # pycache
 */__pycache__
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
