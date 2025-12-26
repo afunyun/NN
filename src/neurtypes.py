@@ -65,7 +65,7 @@ def dxtype_args(dtype: dxtype) -> tuple[int, int]:
         # <= u64 | mult == 1
         return dtype.itemsize*8, 1
     else:
-        sub_dtype: uint | Annotated[np.void, list[np.dtype[np.uint64]]] = dtype.fields["0"][0]
+        sub_dtype: uint | Annotated[np.void, luint] = dtype.fields["0"][0]
         if np.issubdtype(sub_dtype, np.unsignedinteger):
             # > u64 | mult == 1
             return sub_dtype.itemsize*8 * len(dtype.fields), 1
@@ -78,23 +78,30 @@ DXT = _DXTypes()
 
 
 
-Neurray: TypeAlias = np.ndarray[tuple[Annotated[int, "Nodes"], Annotated[int, Literal[2], "Mirror"], Annotated[int, Literal[1], "Batch Size"]], dxtype]
-def create_neurray(paths:int, dtype: dxtype) -> Neurray:
-    # paths, mirroring, batch_size
-    return np.empty((paths, 2, 1), dtype=dtype)
+Neurray: TypeAlias = np.ndarray[tuple[Annotated[Literal[2], "Mirror"], Annotated[int, "Nodes"], Annotated[Literal[1], "Batch Size"]], dxtype]
+
+State: TypeAlias = np.ndarray[tuple[Annotated[int, "Nodes"], Annotated[Literal[1], "Batch"]], dxtype]
+
+Tokens: TypeAlias = np.ndarray[tuple[Annotated[int, "Batch"]], dxtype]
 
 
-State: TypeAlias = np.ndarray[tuple[Annotated[int, "Input"], Annotated[int, "Batch"]], dxtype]
+def tokens_to_neurray(tokens:Tokens) -> Neurray:
+    state = np.reshape(tokens, (1, *tokens.shape))
+    inverse = np.bitwise_not(state)
+    output: Neurray = np.stack((state, inverse), axis=0) # pyright: ignore[reportAssignmentType]
+    return output
 
 
 class MatchBase(ABC):
     def __init__(self, nodes:int, match_size:dxtype, emit_size:dxtype):
         # 3d arrays :despair:
-        self.match: Neurray = create_neurray(nodes, match_size)
-        self.emit: Neurray = create_neurray(nodes, emit_size)
+        self.match_inner = np.empty((2, nodes), dtype=match_size)
+        self.match: Neurray = self.match_inner.reshape((*self.match_inner.shape, 1))
+        assert self.match.base is self.match_inner
+        self.emit: State = np.empty((nodes, 1), dtype=emit_size)
 
     # TODO need to properly do this in __init__ as well
-    def post_init(self, match:Neurray, emit:Neurray):
+    def post_init(self, match:Neurray, emit:State):
         assert dxtype_args(match.dtype) == dxtype_args(self.match.dtype)
         assert match.shape[0] == self.match.shape[0]
         assert dxtype_args(emit.dtype) == dxtype_args(self.emit.dtype)
@@ -103,8 +110,8 @@ class MatchBase(ABC):
         self.emit = emit
 
     @abstractmethod
-    def forward(self, input:State) -> State: ...
+    def forward(self, input_state:Tokens) -> Tokens: ...
     @abstractmethod
-    def backwards(self, expected:State) -> State|None: ...
+    def reverse(self, output_state:Tokens) -> tuple[Tokens, Tokens]: ...
     @abstractmethod
-    def reverse(self) -> State|None: ...
+    def backwards(self, result:Tokens, expected_state:Tokens) -> Tokens: ...
