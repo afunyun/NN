@@ -22,7 +22,7 @@ class _DXTypes:
         else:
             base = name
             assert base[0] == "u"
-            assert len(base) > 2
+            assert len(base) >= 2
             base = int(base[1:], base=10)
             mult = 1
 
@@ -87,7 +87,7 @@ Tokens: TypeAlias = np.ndarray[tuple[Annotated[int, "Batch"]], dxtype]
 
 def tokens_to_neurray(tokens:Tokens) -> Neurray:
     state = np.reshape(tokens, (1, *tokens.shape))
-    inverse = np.bitwise_not(state)
+    inverse = np.bitwise_invert(state)
     output: Neurray = np.stack((state, inverse), axis=0) # pyright: ignore[reportAssignmentType]
     return output
 
@@ -95,10 +95,17 @@ def tokens_to_neurray(tokens:Tokens) -> Neurray:
 class MatchBase(ABC):
     def __init__(self, nodes:int, match_size:dxtype, emit_size:dxtype):
         # 3d arrays :despair:
-        self.match_inner = np.empty((2, nodes), dtype=match_size)
-        self.match: Neurray = self.match_inner.reshape((*self.match_inner.shape, 1))
+        self.match_inner = np.zeros((2, nodes), dtype=match_size)
+        self.match: Neurray = self.match_inner.reshape(*self.match_inner.shape, 1)
         assert self.match.base is self.match_inner
-        self.emit: State = np.empty((nodes, 1), dtype=emit_size)
+        self.emit_inner = np.zeros((nodes), dtype=emit_size)
+        self.emit: State = self.emit_inner.reshape(*self.emit_inner.shape, 1)
+        assert self.emit.base is self.emit_inner
+        self.count = nodes
+        temp = dxtype_args(emit_size)
+        self.limit = temp[0] * temp[1]
+        self.size = 0
+        self.used = 0
 
     # TODO need to properly do this in __init__ as well
     def post_init(self, match:Neurray, emit:State):
@@ -114,4 +121,4 @@ class MatchBase(ABC):
     @abstractmethod
     def reverse(self, output_state:Tokens) -> tuple[Tokens, Tokens]: ...
     @abstractmethod
-    def backwards(self, result:Tokens, expected_state:Tokens) -> Tokens: ...
+    def apply(self, match:tuple[Tokens,Tokens], emit:Tokens) -> None: ...
