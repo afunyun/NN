@@ -18,7 +18,7 @@ class U1XToU1X(MatchBase):
         assert input_state.shape[0] == output_state.shape[0]
         reps = np.broadcast_to(self.match, (2, self.count, output_state.shape[0]))
         mask2 = np.broadcast_to((np.bitwise_and(output_state, self.emit) != 0 ), (2, self.count, output_state.shape[0]))
-        red = np.bitwise_or.reduce(reps, axis=1, where=mask2 )
+        red = np.bitwise_or.reduce(reps, axis=1, where=~mask2)
         diff = np.bitwise_xor(red, np.stack((input_state, np.bitwise_invert(input_state))))
         # removing [0, 0] instances, because useless to compute
         diff_cul = diff[diff.any(axis=-1)]
@@ -27,40 +27,37 @@ class U1XToU1X(MatchBase):
     def assign(self, diff: np.ndarray) -> tuple[np.ndarray, Tokens]:
         """HELP MEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"""
         # Batch normalization :RAGEY:
+        assert diff.shape[0] == 2, "diff is malformed"
 
-        def reduce_duplicates(arr:np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-            # such a weird thing, it works at least; make sure to match dtype or it'll promote
-            aran = np.arange(arr.shape[-2], dtype=arr.dtype)
-            agrid = (aran[..., None] + aran) % arr.shape[-2]
-            arr2 = arr[agrid]
-            # check if anything matches the first row
-            mask = np.triu(arr2[..., 0, 0] == arr2[... , 0])
-            # mask out if a row matches so we don't do it twice
-            mask2 = np.bitwise_invert(mask[1:].any(axis=0))
-            # reduce the negitive of positive matches
-            arr_neg_cul = np.bitwise_and.reduce(arr2[..., 1], axis=0, where=mask)
-            arr_cul = np.stack((arr[mask2, 0], arr_neg_cul[mask2]))
-            return arr_cul, mask2
 
-        diff2 = (diff[..., None] & self.match_inner[:, None, :])
-        mask2 = np.bitwise_invert(diff2[0].any(axis=1))
-        mask3 = diff2.all(axis=0)
-        # botch swap axes call, might do that later once all the rest of the pain is dealt with
-        diff3 = np.swapaxes(np.concat((diff[..., mask2], diff2[..., diff2[0]!=0]), axis=1), -1, -2)
-        diff2_cul, active = reduce_duplicates(diff3)
+        diff2 = np.bitwise_and(diff[..., None], self.match_inner[:, None, :])
+        mask2 = diff2[0].all(axis=1)
+
+        mask4 = diff2[:, mask2].all(axis=0)
+
+        passed = diff[0, ~mask2]
+
+        redu = np.bitwise_and.reduce(diff2[0, mask2], axis=1, where=mask4)
+        diff3_pos = np.unique(np.concat((passed, redu), axis=0))
+        diff3_neg = np.bitwise_and.reduce(~diff3_pos)
+        diff2_cul = np.stack((diff3_pos, np.broadcast_to(diff3_neg, (diff3_pos.shape[0]))))
 
         # the diff has now been seperated into components, next is proceeding to generate the new branches
-        assert self.size + diff2_cul.shape[0] <= self.limit, "out of states"
-        shift = np.ones(diff2_cul.shape[0] + 1, dtype=self.emit_inner.dtype) << np.arange(self.used, self.used + diff2_cul.shape[0] + 1, dtype=self.emit_inner.dtype) # pyright: ignore[reportOperatorIssue]
+        assert self.size + passed.shape[0] <= self.limit, "out of states"
+        ones = np.ones(passed.shape[0], dtype=self.emit_inner.dtype)
+        aran = np.arange(self.used, self.used + passed.shape[0], dtype=self.emit_inner.dtype)
+        new_gen = ones << aran # pyright: ignore[reportOperatorIssue]
+        broad = np.broadcast_to(self.emit_inner[None, ...], (mask4.shape[0], self.count))
+        reused = np.bitwise_and.reduce(broad, axis=1, where=mask4)
+        res = np.concat((new_gen, reused), axis=0)
         self.size += diff2_cul.shape[0]
-        temp_name = np.broadcast_to(self.emit_inner,(diff2_cul.shape[1], self.emit_inner.shape[0]))
-        res = np.bitwise_or.reduce(temp_name, axis=1, where=mask3[active]) ^ shift
 
+        print(diff3_neg)
         return diff2_cul, res
 
     def apply(self, match: np.ndarray, emit: Tokens) -> None:
-        assert match.shape[1] == emit.shape[0]
-        assert match.shape[0] == 2
+        assert match.shape[1] == emit.shape[0], "mismatched arrays"
+        assert match.shape[0] == 2, "match is malformed"
 
         # (1, X)
         reshaped_emit = np.broadcast_to(emit[..., None], (*emit.shape, self.count))
