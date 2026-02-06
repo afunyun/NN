@@ -4,6 +4,8 @@ from neurtypes import Rdu, case_gen_64, Case, State, Diff
 
 class U1XToU1X:
     def __init__(self, match_slot:Case, emit_dtype:type[np.unsignedinteger], cases:int|None=None) -> None:
+        assert len(match_slot.shape) == 1, "malformed case"
+
         bit_size: int = np.iinfo(emit_dtype).bits
         self.array_size: int = ((bit_size * (bit_size-1)) // 2) if cases is None else cases
         self.array_used = 0
@@ -37,7 +39,9 @@ class U1XToU1X:
         # removing [[0, ..., 0][0, ..., 0]] instances, because harmful to compute
         diff_cul: Diff = diff[diff[:, 0].any(axis=1)]
 
-        return output, diff_cul
+        diff_cul2: Diff = np.unique(diff_cul, axis=0)
+
+        return output, diff_cul2
 
     # This is assign and apply
     def assign(self, diff:Diff) -> None:
