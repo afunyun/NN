@@ -11,6 +11,10 @@ class U1XToU1X:
 
         self.match = np.zeros((2, match_slot.shape[0], self.array_size), dtype=match_slot.dtype)
 
+        # Debug stats
+        self.debug_case_activations = np.zeros(self.array_size, dtype=np.uint64)
+        self.reset_debug_stats()
+
     # This is forward + reverse passes
     def forward(self, tokens:State) -> Diff:
         assert tokens.dtype == self.match.dtype
@@ -27,6 +31,11 @@ class U1XToU1X:
 
         choices: np.ndarray = (selection == match_view).all((1,2))
 
+        if self.array_used:
+            case_hits = np.count_nonzero(choices, axis=0).astype(np.uint64, copy=False)
+            self.debug_case_activations[:self.array_used] += case_hits
+            self.debug_total_case_activations += int(case_hits.sum())
+
         # REVERSE
         match_broad = np.broadcast_to(match_view, (choices.shape[0], 2, self.match.shape[1], self.array_used))
         reverse: Diff = np.bitwise_or.reduce(match_broad, axis=3, where=choices[:, None, None, :])
@@ -38,7 +47,49 @@ class U1XToU1X:
         # dedupe as assign will blindly add multipule indentical cases otherwise
         diff_cul2: Diff = np.unique(diff_cul, axis=0)
 
+        self.debug_forward_calls += 1
+        self.debug_total_inputs += int(tokens.shape[0])
+        self.debug_total_diffs += int(diff_cul2.shape[0])
+
         return diff_cul2
+
+    def debug_snapshot(self) -> dict[str, float | int]:
+        avg_diffs_per_forward = 0.0
+        avg_diffs_per_input = 0.0
+        avg_case_activations_per_input = 0.0
+
+        if self.debug_forward_calls:
+            avg_diffs_per_forward = self.debug_total_diffs / self.debug_forward_calls
+        if self.debug_total_inputs:
+            avg_diffs_per_input = self.debug_total_diffs / self.debug_total_inputs
+            avg_case_activations_per_input = self.debug_total_case_activations / self.debug_total_inputs
+
+        active_case_activations = self.debug_case_activations[:self.array_used]
+        case_activation_mean = 0.0
+        if self.array_used:
+            case_activation_mean = float(active_case_activations.mean())
+
+        return {
+            "forward_calls": self.debug_forward_calls,
+            "total_inputs": self.debug_total_inputs,
+            "total_diffs": self.debug_total_diffs,
+            "total_case_activations": self.debug_total_case_activations,
+            "active_cases": self.array_used,
+            "avg_diffs_per_forward": avg_diffs_per_forward,
+            "avg_diffs_per_input": avg_diffs_per_input,
+            "avg_case_activations_per_input": avg_case_activations_per_input,
+            "mean_activations_per_case": case_activation_mean,
+        }
+
+    def debug_case_activation_counts(self) -> np.ndarray:
+        return self.debug_case_activations[:self.array_used].copy()
+
+    def reset_debug_stats(self) -> None:
+        self.debug_forward_calls = 0
+        self.debug_total_inputs = 0
+        self.debug_total_diffs = 0
+        self.debug_total_case_activations = 0
+        self.debug_case_activations.fill(0)
 
     # This is assign and apply
     def assign(self, diff:Diff) -> None:
