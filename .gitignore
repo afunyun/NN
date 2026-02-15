@@ -1,9 +1,4 @@
 
-# Devenv
-devenv*
-devenv.local.nix
-nix-eval-*
-
 # pre-commit
 .pre-commit-config.yaml
 
@@ -13,6 +8,7 @@ nix-eval-*
 # Devenv
 .devenv*
 devenv.local.nix
+nix-eval-*
 
 # direnv
 .direnv
