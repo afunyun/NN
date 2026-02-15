@@ -70,7 +70,16 @@ def dataset():
     tiles_train = chunk_mnist_for_U1X(x_train)
     tiles_eval = chunk_mnist_for_U1X(x_test)
 
-    neur = U1XToU1X(np.empty(tiles_train.shape[2], np.uint8), np.uint64)
+    tiles_train = recast_u64(tiles_train)
+    tiles_eval = recast_u64(tiles_eval)
+
+    #all_tiles = np.unique(all_tiles_train, axis=0)
+
+    #print(all_tiles.shape)
+
+    #exit()
+
+    neur = U1XToU1X(np.empty(tiles_train.shape[2], tiles_train.dtype), cases=2000)
 
     counter = 0
     for tile in tiles_train:
